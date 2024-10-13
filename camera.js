@@ -1,11 +1,37 @@
 const { Client, Events, GatewayIntentBits,ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle, Partials,
+    ButtonStyle, Partials, REST, Routes,
     PermissionFlagsBits, GuildChannelTypes, ChannelType,
     SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 const OBSWebSocket = require('obs-websocket-js').OBSWebSocket;
 const {joinVoiceChannel, VoiceConnectionStatus} = require('@discordjs/voice');
+const commands = [
+    {
+        name: 'camera',
+        description: 'Manage the camera state',
+        options: [
+            {
+                name: 'state',
+                type: 3, // 3 is the type for a string
+                description: 'Turn the camera on or off',
+                required: false, // It's optional, so the user can run `/camera` alone
+                choices: [
+                    {
+                        name: 'on',
+                        value: 'on',
+                    },
+                    {
+                        name: 'off',
+                        value: 'off',
+                    }
+                ]
+            }
+        ]
+    }
+];
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_PRIVATE_TOKEN);
 
 const obs = new OBSWebSocket();
 
@@ -57,16 +83,19 @@ async function waitForConnection() {
 }
 
 async function switchScene(sceneName) {
-    try {
-        console.log("Switch to sceneName: " + sceneName);
-        await obs.call('SetCurrentProgramScene', {'sceneName': sceneName});
-    } catch (e) {
-        console.log("error switching scene");
-        console.log(e);
+    if (isCameraOn) {
+        try {
+            console.log("Switch to sceneName: " + sceneName);
+            await obs.call('SetCurrentProgramScene', {'sceneName': sceneName});
+        } catch (e) {
+            console.log("error switching scene");
+            console.log(e);
+        }
     }
 }
 
 let connections = {};
+let isCameraOn = true;
 
 function startListening(connection) {
     const receiver = connection.receiver;
@@ -89,6 +118,11 @@ function startListening(connection) {
 
 client.once(Events.ClientReady, async readyClient => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+
+    await rest.put(
+        Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.guild_id),
+        { body: commands },
+    );
 
     let voiceChannelJoinPromises = [];
 
@@ -127,6 +161,28 @@ client.once(Events.ClientReady, async readyClient => {
             }
         })
     });
+
+    client.on('interactionCreate', async interaction => {
+        if (!interaction.isCommand()) return;
+
+        const { commandName, options } = interaction;
+
+        if (commandName === 'camera') {
+            const state = options.getString('state'); // Get the 'state' option if provided
+
+            if (state === 'on') {
+                isCameraOn = true; // Turn the camera on
+                await interaction.reply('Camera is now ON.');
+            } else if (state === 'off') {
+                isCameraOn = false; // Turn the camera off
+                await interaction.reply('Camera is now OFF.');
+            } else {
+                // No state provided, just report the current status
+                await interaction.reply(`Camera is currently ${isCameraOn ? 'ON' : 'OFF'}.`);
+            }
+        }
+    });
+
 
     await waitForConnection();
 });
