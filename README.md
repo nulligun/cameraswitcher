@@ -1,8 +1,12 @@
+```
 npm install
 npm run start
+```
 
+```
 OBS -> Tools menu
 WebSocket Server Setting
+```
 
 Make sure "Enable WebSocket Server" and "Enable System Tray Alerts" is checked.
 
