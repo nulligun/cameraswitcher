@@ -6,6 +6,19 @@ const { Client, Events, GatewayIntentBits,ActionRowBuilder,
 require('dotenv').config();
 const OBSWebSocket = require('obs-websocket-js').OBSWebSocket;
 const {joinVoiceChannel, VoiceConnectionStatus} = require('@discordjs/voice');
+async function loadAnyAscii() {
+    const { default: anyAscii } = await import('any-ascii');
+    return anyAscii;
+}
+
+let currentScene = process.env.default_scene;
+let currentSource = process.env.default_source;
+let sourceQueue = [];
+
+let connections = {};
+let isCameraOn = true;
+
+
 const commands = [
     {
         name: 'camera',
@@ -43,6 +56,7 @@ const client = new Client({partials: [Partials.Message, Partials.Channel, Partia
     ws: {version: 8}});
 
 let connected = false;
+let sourceNameToId = {};
 async function waitForConnection() {
     if (!connected) {
         console.log('Detected disconnect or boot, trying to get it back');
@@ -57,6 +71,13 @@ async function waitForConnection() {
 
                 obs.call('GetVersion').then(data => {
                     console.log('OBS Version Information:', data);
+                });
+
+                obs.call('GetSceneItemList', {sceneName: currentScene}).then(data => {
+                    console.log('Sources:', data);
+                    data.sceneItems.forEach((item) => {
+                        sourceNameToId[item.sourceName] = item.sceneItemId;
+                    });
                 });
 
                 obs.on('ConnectionError', async (error) => {
@@ -82,20 +103,38 @@ async function waitForConnection() {
     }
 }
 
-async function switchScene(sceneName) {
+async function switchSource() {
     if (isCameraOn) {
-        try {
-            console.log("Switch to sceneName: " + sceneName);
-            await obs.call('SetCurrentProgramScene', {'sceneName': sceneName});
-        } catch (e) {
-            console.log("error switching scene");
-            console.log(e);
+        const sourceName = (sourceQueue.length > 0) ? sourceQueue.shift() : process.env.default_source;
+        if (sourceName !== currentSource) {
+            try {
+                console.log("Switch to source: " + sourceName);
+                await obs.call('SetSceneItemEnabled', {'sceneName': currentScene, sceneItemId: sourceNameToId[currentSource], 'sceneItemEnabled': false});
+                await obs.call('SetSceneItemEnabled', {'sceneName': currentScene, sceneItemId: sourceNameToId[sourceName], 'sceneItemEnabled': true});
+                currentSource = sourceName;
+            } catch (e) {
+                console.log("error switching source");
+                console.log(e);
+            }
         }
     }
 }
 
-let connections = {};
-let isCameraOn = true;
+function addToQueue(sourceName) {
+    // if the source is already in the queue, remove it
+    if (sourceQueue.includes(sourceName)) {
+        sourceQueue = sourceQueue.filter((s) => s !== sourceName);
+    }
+    // put it at the top of the queue
+    sourceQueue.unshift(sourceName);
+}
+
+function removeFromQueue(sourceName) {
+    // if the source is already in the queue, remove it
+    if (sourceQueue.includes(sourceName)) {
+        sourceQueue = sourceQueue.filter((s) => s !== sourceName);
+    }
+}
 
 function startListening(connection) {
     const receiver = connection.receiver;
@@ -104,15 +143,19 @@ function startListening(connection) {
         const user = client.users.cache.get(userId);
         console.log(`${user.displayName} started speaking`);
         // remove all non-alphanumeric characters
-        const sceneName = user.displayName.replace(/[^a-zA-Z]/g, '').toLowerCase()
-        await switchScene(sceneName);
+        const anyAscii = await loadAnyAscii();
+        const sourceName = anyAscii(user.displayName).replace(/[^a-zA-Z]/g, '').toLowerCase()
+        addToQueue(sourceName);
+        if (currentSource === process.env.default_source) await switchSource();
     });
 
     receiver.speaking.on('end', async (userId) => {
         const user = client.users.cache.get(userId);
         console.log(`${user.displayName} stopped speaking`);
-        const sceneName = user.displayName.replace(/[^a-zA-Z]/g, '').toLowerCase()
-        await switchScene(sceneName);
+        const anyAscii = await loadAnyAscii();
+        const sourceName = anyAscii(user.displayName).replace(/[^a-zA-Z]/g, '').toLowerCase()
+        removeFromQueue(sourceName);
+        await switchSource();
     });
 }
 
