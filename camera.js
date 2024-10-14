@@ -237,7 +237,7 @@ client.once(Events.ClientReady, async readyClient => {
             if (scene !== currentScene) {
                 try {
                     console.log("Switch to scene: " + scene);
-                    await obs.call('SetCurrentScene', {'scene-name': scene});
+                    await obs.call('SetCurrentProgramScene', {'sceneName': scene});
                     currentScene = scene;
                     obs.call('GetSceneItemList', {sceneName: currentScene}).then(data => {
                         console.log('Sources:', data);
@@ -245,6 +245,7 @@ client.once(Events.ClientReady, async readyClient => {
                             sourceNameToId[item.sourceName] = item.sceneItemId;
                         });
                     });
+                    await interaction.reply(`Scene is now ${scene}.`);
                 } catch (e) {
                     console.log("error switching scene");
                     console.log(e);
