@@ -20,6 +20,16 @@ let isCameraOn = true;
 
 
 const commands = [
+    {name: 'scene',
+        description: 'Set the scene to manage',
+        options: [
+            {
+                name: 'scene',
+                type: 3, // 3 is the type for a string
+                description: 'The scene you are managing',
+                required: true, // It's required, so the user must provide it\
+            }]
+    },
     {
         name: 'camera',
         description: 'Manage the camera state',
@@ -212,7 +222,6 @@ client.once(Events.ClientReady, async readyClient => {
 
         if (commandName === 'camera') {
             const state = options.getString('state'); // Get the 'state' option if provided
-
             if (state === 'on') {
                 isCameraOn = true; // Turn the camera on
                 await interaction.reply('Camera is now ON.');
@@ -222,6 +231,24 @@ client.once(Events.ClientReady, async readyClient => {
             } else {
                 // No state provided, just report the current status
                 await interaction.reply(`Camera is currently ${isCameraOn ? 'ON' : 'OFF'}.`);
+            }
+        } else if (commandName === 'scene') {
+            const scene = options.getString('scene');
+            if (scene !== currentScene) {
+                try {
+                    console.log("Switch to scene: " + scene);
+                    await obs.call('SetCurrentScene', {'scene-name': scene});
+                    currentScene = scene;
+                    obs.call('GetSceneItemList', {sceneName: currentScene}).then(data => {
+                        console.log('Sources:', data);
+                        data.sceneItems.forEach((item) => {
+                            sourceNameToId[item.sourceName] = item.sceneItemId;
+                        });
+                    });
+                } catch (e) {
+                    console.log("error switching scene");
+                    console.log(e);
+                }
             }
         }
     });
