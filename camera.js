@@ -14,6 +14,8 @@ async function loadAnyAscii() {
 let currentScene = process.env.default_scene;
 let currentSource = process.env.default_source;
 let sourceQueue = [];
+let sourceTalking = {};
+let currentMode = 'multiple';
 
 let connections = {};
 let isCameraOn = true;
@@ -113,18 +115,39 @@ async function waitForConnection() {
     }
 }
 
-async function switchSource() {
+async function switchSource(destSource) {
     if (isCameraOn) {
-        const sourceName = (sourceQueue.length > 0) ? sourceQueue.shift() : process.env.default_source;
-        if (sourceName !== currentSource) {
-            try {
-                console.log("Switch to source: " + sourceName);
-                await obs.call('SetSceneItemEnabled', {'sceneName': currentScene, sceneItemId: sourceNameToId[currentSource], 'sceneItemEnabled': false});
-                await obs.call('SetSceneItemEnabled', {'sceneName': currentScene, sceneItemId: sourceNameToId[sourceName], 'sceneItemEnabled': true});
-                currentSource = sourceName;
-            } catch (e) {
-                console.log("error switching source");
-                console.log(e);
+        if (currentMode === 'single') {
+            const sourceName = (sourceQueue.length > 0) ? sourceQueue.shift() : process.env.default_source;
+            if (sourceName !== currentSource) {
+                try {
+                    if (sourceNameToId[sourceName]) {
+                        console.log("Switch to source: " + sourceName);
+                        await obs.call('SetSceneItemEnabled', {
+                            'sceneName': currentScene,
+                            sceneItemId: sourceNameToId[currentSource],
+                            'sceneItemEnabled': false
+                        });
+                        await obs.call('SetSceneItemEnabled', {
+                            'sceneName': currentScene,
+                            sceneItemId: sourceNameToId[sourceName],
+                            'sceneItemEnabled': true
+                        });
+                        currentSource = sourceName;
+                    }
+                } catch (e) {
+                    console.log("error switching source");
+                    console.log(e);
+                }
+            }
+        } else {
+            if (sourceNameToId[destSource]) {
+                console.log("Switch to source: " + destSource);
+                await obs.call('SetSceneItemEnabled', {
+                    'sceneName': currentScene,
+                    sceneItemId: sourceNameToId[destSource],
+                    'sceneItemEnabled': true
+                });
             }
         }
     }
@@ -155,8 +178,13 @@ function startListening(connection) {
         // remove all non-alphanumeric characters
         const anyAscii = await loadAnyAscii();
         const sourceName = anyAscii(user.displayName).replace(/[^a-zA-Z]/g, '').toLowerCase()
+        sourceTalking[sourceName] = true;
         addToQueue(sourceName);
-        if (currentSource === process.env.default_source) await switchSource();
+        if (currentMode === 'single') {
+            if (currentSource === process.env.default_source) await switchSource();
+        } else {
+            await switchSource(sourceName);
+        }
     });
 
     receiver.speaking.on('end', async (userId) => {
@@ -164,8 +192,19 @@ function startListening(connection) {
         console.log(`${user.displayName} stopped speaking`);
         const anyAscii = await loadAnyAscii();
         const sourceName = anyAscii(user.displayName).replace(/[^a-zA-Z]/g, '').toLowerCase()
+        sourceTalking[sourceName] = false;
         removeFromQueue(sourceName);
-        await switchSource();
+        if (currentMode === 'single') {
+            await switchSource();
+        } else {
+            if (sourceNameToId[sourceName]) {
+                await obs.call('SetSceneItemEnabled', {
+                    'sceneName': currentScene,
+                    sceneItemId: sourceNameToId[sourceName],
+                    'sceneItemEnabled': false
+                });
+            }
+        }
     });
 }
 
