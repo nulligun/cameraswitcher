@@ -32,6 +32,16 @@ const commands = [
                 required: true, // It's required, so the user must provide it\
             }]
     },
+    {name: 'mode',
+        description: 'Set single or multiple avatars at once',
+        options: [
+            {
+                name: 'mode',
+                type: 3, // 3 is the type for a string
+                description: 'single or multiple',
+                required: true, // It's required, so the user must provide it\
+            }]
+    },
     {
         name: 'camera',
         description: 'Manage the camera state',
@@ -203,6 +213,8 @@ function startListening(connection) {
                     sceneItemId: sourceNameToId[sourceName],
                     'sceneItemEnabled': false
                 });
+            } else {
+                console.log("Source not found: " + sourceName);
             }
         }
     });
@@ -224,6 +236,8 @@ client.once(Events.ClientReady, async readyClient => {
                 channelId: voiceChannel.id,
                 guildId: voiceChannel.guild.id,
                 adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                selfDeaf: false,
+                selfMute: false
             });
             resolve3();
         });
@@ -289,6 +303,14 @@ client.once(Events.ClientReady, async readyClient => {
                     console.log("error switching scene");
                     console.log(e);
                 }
+            }
+        } else if (commandName === 'mode') {
+            const mode = options.getString('mode');
+            if (mode === 'single' || mode === 'multiple') {
+                currentMode = mode;
+                await interaction.reply(`Mode is now ${mode}.`);
+            } else {
+                await interaction.reply(`Mode must be 'single' or 'multiple'.`);
             }
         }
     });
