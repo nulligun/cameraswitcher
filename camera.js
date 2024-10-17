@@ -5,10 +5,71 @@ const { Client, Events, GatewayIntentBits,ActionRowBuilder,
     SlashCommandBuilder } = require('discord.js');
 require('dotenv').config();
 const OBSWebSocket = require('obs-websocket-js').OBSWebSocket;
-const {joinVoiceChannel, VoiceConnectionStatus} = require('@discordjs/voice');
+const {AudioPlayerError,
+    AudioPlayerStatus, joinVoiceChannel, VoiceConnectionStatus, createAudioPlayer, createAudioResource, StreamType } = require('@discordjs/voice');
 async function loadAnyAscii() {
     const { default: anyAscii } = await import('any-ascii');
     return anyAscii;
+}
+const ElevenLabs = require("elevenlabs-node");
+
+const voice = new ElevenLabs(
+    {
+        apiKey:  process.env.eleven_apikey,
+        voiceId: "BfDbhCUVGzNgO4WXDRdy",
+    }
+);
+let queue = [];
+let playing = false;
+const player = createAudioPlayer();
+
+player.on(AudioPlayerError, (error) => {
+    console.log("AudioPlayerError: " + error);
+    playing = false;
+    if (queue.length > 0) {
+        const filename = queue.shift();
+        playFile(filename);
+    }
+});
+player.on(AudioPlayerStatus.Idle, () => {
+    console.log("done playing nully audio");
+    playing = false;
+    if (queue.length > 0) {
+        const filename = queue.shift();
+        playFile(filename);
+    }
+});
+
+player.on(AudioPlayerStatus.Buffering, () => {
+    console.log("Buffering");
+});
+
+player.on(AudioPlayerStatus.AutoPaused, () => {
+    console.log("AutoPaused");
+})
+
+player.on(AudioPlayerStatus.Paused, () => {
+    console.log("Paused");
+});
+
+player.on(AudioPlayerStatus.Playing, () => {
+    console.log("Playing");
+});
+
+function playFile(filename) {
+    if (!playing) {
+        playing = true;
+        const connection = connections[process.env.guild_id];
+
+        const resource = createAudioResource(filename, {
+            inputType: StreamType.Arbitrary,
+        });
+        player.play(resource);
+
+        connection.subscribe(player);
+    } else {
+        queue.push(filename);
+    }
 }
 
 let currentScene = process.env.default_scene;
@@ -19,7 +80,6 @@ let currentMode = 'multiple';
 
 let connections = {};
 let isCameraOn = true;
-
 
 const commands = [
     {name: 'scene',
@@ -220,8 +280,40 @@ function startListening(connection) {
     });
 }
 
+async function getFile(textToSay) {
+    const { temporaryFile } = await import('tempy');
+
+    const filename = temporaryFile({extension: 'mp3'});
+    console.log("tmpfile: " + filename);
+    await voice.textToSpeech({
+        voiceId: "BfDbhCUVGzNgO4WXDRdy",
+        fileName: filename,
+        textInput: textToSay,
+        modelId: "eleven_turbo_v2_5"
+    });
+
+    return filename;
+}
+
 client.once(Events.ClientReady, async readyClient => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+
+    // when someone sends a direct message
+    client.on(Events.MessageCreate, async message => {
+        // Ignore messages from bots
+        if (message.author.bot) return;
+
+        // Check if the message is in a DM
+        if (!message.guild) {
+            console.log(`Received a DM from ${message.author.tag}: ${message.content}`);
+
+            const filename = await getFile(message.content);
+            if (filename) {
+                playFile(filename);
+            }
+
+        }
+    });
 
     await rest.put(
         Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.guild_id),
