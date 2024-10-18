@@ -23,20 +23,36 @@ let queue = [];
 let playing = false;
 const player = createAudioPlayer();
 
-player.on(AudioPlayerError, (error) => {
+player.on(AudioPlayerError, async (error) => {
     console.log("AudioPlayerError: " + error);
     playing = false;
     if (queue.length > 0) {
         const filename = queue.shift();
-        playFile(filename);
+        await playFile(filename);
     }
 });
-player.on(AudioPlayerStatus.Idle, () => {
+player.on(AudioPlayerStatus.Idle, async () => {
     console.log("done playing nully audio");
     playing = false;
     if (queue.length > 0) {
         const filename = queue.shift();
-        playFile(filename);
+        await playFile(filename);
+    } else {
+        removeFromQueue(selfUsername);
+        sourceTalking[selfUsername] = false;
+        if (currentMode === 'single') {
+            await switchSource();
+        } else {
+            if (sourceNameToId[selfUsername]) {
+                await obs.call('SetSceneItemEnabled', {
+                    'sceneName': currentScene,
+                    sceneItemId: sourceNameToId[selfUsername],
+                    'sceneItemEnabled': false
+                });
+            } else {
+                console.log("Source not found: " + selfUsername);
+            }
+        }
     }
 });
 
@@ -56,8 +72,15 @@ player.on(AudioPlayerStatus.Playing, () => {
     console.log("Playing");
 });
 
-function playFile(filename) {
+async function playFile(filename) {
     if (!playing) {
+        addToQueue(selfUsername);
+        sourceTalking[selfUsername] = true;
+        if (currentMode === 'single') {
+            if (currentSource === process.env.default_source) await switchSource();
+        } else {
+            await switchSource(selfUsername);
+        }
         playing = true;
         const connection = connections[process.env.guild_id];
 
@@ -218,6 +241,8 @@ async function switchSource(destSource) {
                     sceneItemId: sourceNameToId[destSource],
                     'sceneItemEnabled': true
                 });
+            } else {
+                console.log("Source not found: " + destSource);
             }
         }
     }
@@ -295,8 +320,13 @@ async function getFile(textToSay) {
     return filename;
 }
 
+let selfUsername = '';
+
 client.once(Events.ClientReady, async readyClient => {
     console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+
+    const anyAscii = await loadAnyAscii();
+    selfUsername = anyAscii(readyClient.user.username).replace(/[^a-zA-Z]/g, '').toLowerCase()
 
     // when someone sends a direct message
     client.on(Events.MessageCreate, async message => {
@@ -309,7 +339,7 @@ client.once(Events.ClientReady, async readyClient => {
 
             const filename = await getFile(message.content);
             if (filename) {
-                playFile(filename);
+                await playFile(filename);
             }
 
         }
